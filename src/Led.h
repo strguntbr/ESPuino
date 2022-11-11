@@ -23,3 +23,9 @@ uint8_t AudioPlayer_GetInitVolume(void);
 void AudioPlayer_SetInitVolume(uint8_t value);
 uint8_t AudioPlayer_GetInitVolume(void);
 void AudioPlayer_SetInitVolume(uint8_t value);
+
+#ifndef LED_OFFSET
+    #define LED_OFFSET 0
+#elif LED_OFFSET < 0 || LED_OFFSET >= NUM_LEDS
+    #error LED_OFFSET must be between 0 and NUM_LEDS-1
+#endif

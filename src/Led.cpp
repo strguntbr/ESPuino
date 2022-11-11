@@ -121,12 +121,20 @@ void Led_SetBrightness(uint8_t value) {
     #endif
 }
 
-// Switches Neopixel-addressing from clockwise to counter clockwise (and vice versa)
+// Calculates physical address for a virtual LED address. This handles reversing the rotation direction of the ring and shifting the starting LED
 uint8_t Led_Address(uint8_t number) {
     #ifdef NEOPIXEL_REVERSE_ROTATION
-        return NUM_LEDS - 1 - number;
+        #if LED_OFFSET > 0
+            return number <=  LED_OFFSET - 1 ? LED_OFFSET - 1 - number : NUM_LEDS + LED_OFFSET - 1 - number;
+        #else
+            return NUM_LEDS - 1 - number;
+        #endif
     #else
-        return number;
+        #if LED_OFFSET > 0
+            return number >= NUM_LEDS - LED_OFFSET ?  number + LED_OFFSET - NUM_LEDS : number + LED_OFFSET;
+        #else
+            return number;
+        #endif
     #endif
 }
 

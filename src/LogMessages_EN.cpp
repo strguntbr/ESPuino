@@ -56,6 +56,7 @@
     const char rfidTagReceived[] PROGMEM = "RFID-tag received";
     const char dontAccepctSameRfid[] PROGMEM = "Reapplied same rfid-tag - rejected!";
     const char rfidTagUnknownInNvs[] PROGMEM = "RFID-tag is unkown to NVS.";
+    const char mfrc522HaltFailed[] PROGMEM = "RFID-reader: Halt command failed";
     const char goToSleepDueToIdle[] PROGMEM = "Going to deepsleep due to inactivity-timer...";
     const char goToSleepDueToTimer[] PROGMEM = "Going to deepsleep due to sleep timer...";
     const char goToSleepNow[] PROGMEM = "Going to deepsleep now!";

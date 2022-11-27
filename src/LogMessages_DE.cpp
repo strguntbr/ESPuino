@@ -56,6 +56,7 @@
     const char rfidTagReceived[] PROGMEM = "RFID-Karte empfangen";
     const char dontAccepctSameRfid[] PROGMEM = "Aktuelle RFID-Karte erneut aufgelegt - abgelehnt!";
     const char rfidTagUnknownInNvs[] PROGMEM = "RFID-Karte ist im NVS nicht hinterlegt.";
+    const char mfrc522HaltFailed[] PROGMEM = "RFID-Leser: Halt Befehl ist fehlgeschlagen";
     const char goToSleepDueToIdle[] PROGMEM = "Gehe in Deep Sleep wegen Inaktivität...";
     const char goToSleepDueToTimer[] PROGMEM = "Gehe in Deep Sleep wegen Sleep Timer...";
     const char goToSleepNow[] PROGMEM = "Gehe jetzt in Deep Sleep!";

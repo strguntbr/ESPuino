@@ -30,6 +30,27 @@
         static MFRC522 mfrc522(RFID_CS, RST_PIN);
     #endif
 
+    static bool Mfrc522_RequestA(void) {
+        uint8_t bufferATQA[2];
+        uint8_t bufferSize = sizeof(bufferATQA);
+        MFRC522::StatusCode result = mfrc522.PICC_RequestA(bufferATQA, &bufferSize);
+        return result == MFRC522::STATUS_OK;    
+    }
+
+    static bool Mfrc522_WakeupA(void) {
+        uint8_t bufferATQA[2];
+        uint8_t bufferSize = sizeof(bufferATQA);
+        MFRC522::StatusCode result = mfrc522.PICC_WakeupA(bufferATQA, &bufferSize);
+        return result == MFRC522::STATUS_OK;
+    }
+
+    static void Mfrc522_HaltA(void) {
+        MFRC522::StatusCode result = mfrc522.PICC_HaltA();
+        if (result != MFRC522::STATUS_OK) {
+            Log_Println((char *) FPSTR(mfrc522HaltFailed), LOGLEVEL_NOTICE);
+        }
+    }
+
     void Rfid_Init(void) {
         #ifdef RFID_READER_TYPE_MFRC522_SPI
             SPI.begin(RFID_SCK, RFID_MISO, RFID_MOSI, RFID_CS);
@@ -56,118 +77,63 @@
     }
 
     void Rfid_Task(void *parameter) {
-        uint8_t control = 0x00;
+        const TickType_t xFrequency = RFID_SCAN_INTERVAL / portTICK_PERIOD_MS;
+        TickType_t xLastWakeTime = xTaskGetTickCount();
+        bool tagCurrentlyActive = false;
+        byte cardId[cardIdSize];
+        #ifdef PAUSE_WHEN_RFID_REMOVED
+            const bool pauseWhenRfidRemoved = true;
+        #else
+            const bool pauseWhenRfidRemoved = false;
+        #endif
 
         for (;;) {
-            if (RFID_SCAN_INTERVAL/2 >= 20) {
-                vTaskDelay(portTICK_RATE_MS * (RFID_SCAN_INTERVAL/2));
-            } else {
-               vTaskDelay(portTICK_RATE_MS * 20);
-            }
-            byte cardId[cardIdSize];
-            String cardIdString;
-            #ifdef PAUSE_WHEN_RFID_REMOVED
-                byte lastValidcardId[cardIdSize];
-                bool cardAppliedCurrentRun = false;
-                bool sameCardReapplied = false;
-            #endif
-            if ((millis() - Rfid_LastRfidCheckTimestamp) >= RFID_SCAN_INTERVAL) {
-                //snprintf(Log_Buffer, Log_BufferLength, "%u", uxTaskGetStackHighWaterMark(NULL));
-                //Log_Println(Log_Buffer, LOGLEVEL_DEBUG);
-
-                Rfid_LastRfidCheckTimestamp = millis();
-                // Reset the loop if no new card is present on the sensor/reader. This saves the entire process when idle.
-
-                 if (!mfrc522.PICC_IsNewCardPresent()) {
-                    continue;
-                }
-
-                // Select one of the cards
-                if (!mfrc522.PICC_ReadCardSerial()) {
-                    continue;
-                }
-                #ifdef PAUSE_WHEN_RFID_REMOVED
-                    cardAppliedCurrentRun = true;
-                #endif
-
-                #ifndef PAUSE_WHEN_RFID_REMOVED
-                    mfrc522.PICC_HaltA();
-                    mfrc522.PCD_StopCrypto1();
-                #endif
-
-                memcpy(cardId, mfrc522.uid.uidByte, cardIdSize);
-
-                #ifdef PAUSE_WHEN_RFID_REMOVED
-                    if (memcmp((const void *)lastValidcardId, (const void *)cardId, sizeof(cardId)) == 0) {
-                        sameCardReapplied = true;
-                    }
-                #endif
-
-                Log_Print((char *) FPSTR(rfidTagDetected), LOGLEVEL_NOTICE);
-                for (uint8_t i=0u; i < cardIdSize; i++) {
-                    snprintf(Log_Buffer, Log_BufferLength, "%02x%s", cardId[i], (i < cardIdSize - 1u) ? "-" : "\n");
-                    Log_Print(Log_Buffer, LOGLEVEL_NOTICE);
-                }
-
-                for (uint8_t i=0u; i < cardIdSize; i++) {
-                    char num[4];
-                    snprintf(num, sizeof(num), "%03d", cardId[i]);
-                    cardIdString += num;
-                }
-
-                #ifdef PAUSE_WHEN_RFID_REMOVED
-                    if (!sameCardReapplied) {       // Don't allow to send card to queue if it's the same card again...
-                        xQueueSend(gRfidCardQueue, cardIdString.c_str(), 0);
-                    } else {
-                        // If pause-button was pressed while card was not applied, playback could be active. If so: don't pause when card is reapplied again as the desired functionality would be reversed in this case.
-                        if (gPlayProperties.pausePlay && System_GetOperationMode() != OPMODE_BLUETOOTH_SINK) {
-                            AudioPlayer_TrackControlToQueueSender(PAUSEPLAY);       // ... play/pause instead (but not for BT)
-                        }
-                    }
-                    memcpy(lastValidcardId, mfrc522.uid.uidByte, cardIdSize);
-                #else
-                    xQueueSend(gRfidCardQueue, cardIdString.c_str(), 0);        // If PAUSE_WHEN_RFID_REMOVED isn't active, every card-apply leads to new playlist-generation
-                #endif
-
-                #ifdef PAUSE_WHEN_RFID_REMOVED
-                    // https://github.com/miguelbalboa/rfid/issues/188; voodoo! :-)
-                    while (true) {
-                        #if RFID_SCAN_INTERVAL > 40
-                            vTaskDelay(portTICK_RATE_MS * (RFID_SCAN_INTERVAL/2));
-                        #else
-                            vTaskDelay(portTICK_RATE_MS * 20);
-                        #endif
-                        control=0;
-                        for (uint8_t i=0u; i<3; i++) {
-                            if (!mfrc522.PICC_IsNewCardPresent()) {
-                                if (mfrc522.PICC_ReadCardSerial()) {
-                                    control |= 0x16;
-                                }
-                                if (mfrc522.PICC_ReadCardSerial()) {
-                                    control |= 0x16;
-                                }
-                                control += 0x1;
+            if (!tagCurrentlyActive) {
+                if (Mfrc522_RequestA()) {
+                    if (mfrc522.PICC_ReadCardSerial()) {
+                        tagCurrentlyActive = true;
+                        if (pauseWhenRfidRemoved && memcmp(cardId, mfrc522.uid.uidByte, cardIdSize) == 0) {
+                            // same tag reapplied
+                            if (gPlayProperties.pausePlay && System_GetOperationMode() != OPMODE_BLUETOOTH_SINK) {
+                                AudioPlayer_TrackControlToQueueSender(PAUSEPLAY);       // ... play/pause instead (but not for BT)
                             }
-                            control += 0x4;
-                        }
-
-                        if (control == 13 || control == 14) {
-                            //card is still there
+                            Log_Println((char *) FPSTR(rfidTagReapplied), LOGLEVEL_NOTICE);
                         } else {
-                            break;
+                            memcpy(cardId, mfrc522.uid.uidByte, cardIdSize);
+                            String cardIdString;
+                            for (uint8_t i=0u; i < cardIdSize; i++) {
+                                char num[4];
+                                snprintf(num, sizeof(num), "%03d", cardId[i]);
+                                cardIdString += num;
+                            }
+                            xQueueSend(gRfidCardQueue, cardIdString.c_str(), 0);
+                            Log_Print((char *) FPSTR(rfidTagDetected), LOGLEVEL_NOTICE);
+                            for (uint8_t i=0u; i < cardIdSize; i++) {
+                                snprintf(Log_Buffer, Log_BufferLength, "%02x%s", cardId[i], (i < cardIdSize - 1u) ? "-" : "\n");
+                                Log_Print(Log_Buffer, LOGLEVEL_NOTICE);
+                            }
                         }
                     }
-
+                    Mfrc522_HaltA();
+                }
+            } else {
+                if (Mfrc522_WakeupA()) {
+                    if (mfrc522.PICC_ReadCardSerial() && memcmp(cardId, mfrc522.uid.uidByte, cardIdSize) == 0) {
+                        // still found same tag
+                        Mfrc522_HaltA();
+                        continue;
+                    }
+                    Mfrc522_HaltA();
+                }
+                tagCurrentlyActive = false;
+                #ifdef PAUSE_WHEN_RFID_REMOVED
                     Log_Println((char *) FPSTR(rfidTagRemoved), LOGLEVEL_NOTICE);
                     if (!gPlayProperties.pausePlay && System_GetOperationMode() != OPMODE_BLUETOOTH_SINK) {
                         AudioPlayer_TrackControlToQueueSender(PAUSEPLAY);
-                        Log_Println((char *) FPSTR(rfidTagReapplied), LOGLEVEL_NOTICE);
                     }
-                    mfrc522.PICC_HaltA();
-                    mfrc522.PCD_StopCrypto1();
-                    cardAppliedCurrentRun = false;
                 #endif
             }
+            vTaskDelayUntil(&xLastWakeTime, xFrequency);
         }
     }
 

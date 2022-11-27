@@ -102,6 +102,8 @@
         #define BUTTON_5                    105         // Button 5: connected to port-expander
     #endif
 
+    //#define BUTTONS_LED                   114         // Powers the LEDs of the buttons
+
     // Channels of port-expander can be read cyclic or interrupt-driven. It's strongly recommended to use the interrupt-way!
     // Infos: https://forum.espuino.de/t/einsatz-des-port-expanders-pca9555/306
     #ifdef PORT_EXPANDER_ENABLE
